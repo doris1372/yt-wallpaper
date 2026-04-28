@@ -8,7 +8,7 @@
 # to start; the rest of the UI still works.
 
 from pathlib import Path
-from PyInstaller.utils.hooks import collect_submodules
+from PyInstaller.utils.hooks import collect_submodules, collect_data_files
 
 block_cipher = None
 
@@ -24,14 +24,44 @@ if assets_dir.exists():
         if f.is_file():
             datas.append((str(f), "assets"))
 
-# Bundle libmpv if user dropped it next to the spec
-for dll_name in ("mpv-2.dll", "libmpv-2.dll"):
+# Bundle libmpv. We only ship one copy (libmpv-2.dll) — python-mpv tries both
+# names so this is enough.
+for dll_name in ("libmpv-2.dll", "mpv-2.dll"):
     dll_path = ROOT / dll_name
     if dll_path.exists():
         binaries.append((str(dll_path), "."))
+        break
 
-hiddenimports = []
-hiddenimports += collect_submodules("yt_dlp")
+# yt_dlp uses dynamic imports for hundreds of extractors — bundle them all.
+hiddenimports = collect_submodules("yt_dlp")
+
+# Make sure PySide6 / mpv are seen even when the entry point uses lazy imports.
+hiddenimports += [
+    "ytwall",
+    "ytwall.app",
+    "ytwall.config",
+    "ytwall.library",
+    "ytwall.downloader",
+    "ytwall.wallpaper",
+    "ytwall.pause_monitor",
+    "ytwall.tray",
+    "ytwall.styles",
+    "ytwall.autostart",
+    "ytwall.widgets",
+    "ytwall.widgets.main_window",
+    "ytwall.widgets.download_tab",
+    "ytwall.widgets.library_tab",
+    "ytwall.widgets.settings_tab",
+    "ytwall.widgets.clip_card",
+    "PySide6.QtCore",
+    "PySide6.QtGui",
+    "PySide6.QtWidgets",
+    "mpv",
+    "psutil",
+]
+
+# yt-dlp also ships a small set of data files (certifi etc.) — collect them.
+datas += collect_data_files("yt_dlp", includes=["**/*.json"])
 
 a = Analysis(
     ["src/ytwall/__main__.py"],
