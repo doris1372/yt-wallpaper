@@ -72,22 +72,31 @@ jobs:
       - name: Verify bundle contents
         shell: pwsh
         run: |
+          Write-Host "=== Top-level dist\ytwall ==="
+          Get-ChildItem dist\ytwall | Select-Object Name, Length | Format-Table
+
+          Write-Host "=== dist\ytwall\_internal first 40 entries ==="
+          Get-ChildItem dist\ytwall\_internal | Select-Object -First 40 | Select-Object Name, Length | Format-Table
+
           $missing = @()
-          $required = @(
-            "dist\ytwall\ytwall.exe",
-            "dist\ytwall\_internal\libmpv-2.dll"
-          )
-          foreach ($p in $required) { if (-not (Test-Path $p)) { $missing += $p } }
-          $qt = Get-ChildItem "dist\ytwall\_internal" -Filter "Qt6*.dll" -ErrorAction SilentlyContinue
-          if (-not $qt) { $missing += "Qt6*.dll (PySide6)" }
-          $pyside = Get-ChildItem "dist\ytwall\_internal\PySide6" -ErrorAction SilentlyContinue
-          if (-not $pyside) { $missing += "_internal/PySide6 directory" }
+          if (-not (Test-Path "dist\ytwall\ytwall.exe")) { $missing += "ytwall.exe" }
+
+          $mpvDll = Get-ChildItem "dist\ytwall" -Recurse -Filter "libmpv-2.dll" -ErrorAction SilentlyContinue
+          if (-not $mpvDll) { $missing += "libmpv-2.dll" } else {
+            Write-Host "libmpv at: $($mpvDll[0].FullName)"
+          }
+
+          $qt = Get-ChildItem "dist\ytwall" -Recurse -Filter "Qt6Core.dll" -ErrorAction SilentlyContinue
+          if (-not $qt) { $missing += "Qt6Core.dll (PySide6)" } else {
+            Write-Host "Qt6Core at: $($qt[0].FullName)"
+          }
+
           if ($missing.Count -gt 0) {
             Write-Host "::error::Build is missing required components:" -ForegroundColor Red
             $missing | ForEach-Object { Write-Host "  - $_" }
             exit 1
           }
-          Write-Host "Bundle contents OK. Qt6 DLLs found:" $qt.Count
+          Write-Host "Bundle contents OK."
 
       - name: Smoke-test launch (start + kill)
         shell: pwsh
