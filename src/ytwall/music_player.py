@@ -13,6 +13,7 @@ Threading model:
 from __future__ import annotations
 
 import logging
+import os
 import threading
 
 from PySide6.QtCore import QObject, QTimer, Signal
@@ -59,20 +60,38 @@ class MusicPlayer(QObject):
             if self._mpv is None:
                 import mpv
 
-                self._mpv = mpv.MPV(
-                    vid="no",
-                    audio_display="no",
-                    keep_open="no",
-                    cache="yes",
-                    demuxer_max_bytes=64 * 1024 * 1024,
-                )
+                kwargs = {
+                    "vid": "no",
+                    "audio_display": "no",
+                    "keep_open": "no",
+                    "cache": "yes",
+                    "demuxer_max_bytes": 64 * 1024 * 1024,
+                }
+                # Optional override for headless / no-audio environments.
+                ao_override = os.environ.get("YTWALL_MPV_AO")
+                if ao_override:
+                    kwargs["ao"] = ao_override
+                self._mpv = mpv.MPV(**kwargs)
                 # Auto-advance when track ends.
                 @self._mpv.event_callback("end-file")
                 def _on_end_file(event):
-                    reason = (event.get("event") or {}).get("reason")
-                    if reason == "eof":
-                        # Schedule on Qt main thread.
-                        QTimer.singleShot(0, self.next)
+                    # python-mpv ≥1.0 hands us an MpvEvent object whose
+                    # underlying end-file struct lives at .data.reason.
+                    # Older paths used a dict-shaped event. Be tolerant.
+                    try:
+                        reason = None
+                        data = getattr(event, "data", None)
+                        if data is None and hasattr(event, "get"):
+                            data = event.get("event") or {}
+                        if hasattr(data, "reason"):
+                            reason = data.reason
+                        elif isinstance(data, dict):
+                            reason = data.get("reason")
+                        # libmpv reason: 0 == EOF (also "eof" in some bindings).
+                        if reason in (0, "eof"):
+                            QTimer.singleShot(0, self.next)
+                    except Exception:  # noqa: BLE001
+                        log.exception("end-file handler failed")
 
                 self._mpv.volume = self._volume
         return self._mpv
