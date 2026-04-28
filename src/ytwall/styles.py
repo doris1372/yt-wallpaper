@@ -113,4 +113,39 @@ QSlider::handle:horizontal {
 QStatusBar { background: #0b0d12; color: #6b7280; border-top: 1px solid #1f2330; }
 
 QToolTip { background: #11151d; color: #e5e7eb; border: 1px solid #2d3346; padding: 6px 8px; border-radius: 6px; }
+
+/* ---------- Music tab ---------- */
+QFrame#trackRow {
+    background: transparent; border-bottom: 1px solid #1a1d27;
+}
+QFrame#trackRow:hover { background: #11141c; }
+QLabel#trackTitle { font-weight: 600; color: #fafafa; }
+QLabel#trackCover, QLabel#miniCover { background: #1d1f24; }
+
+QPushButton#mode {
+    background: #11151d; border: 1px solid #1f2330; border-radius: 18px;
+    padding: 7px 18px; color: #c7cad1;
+}
+QPushButton#mode:hover { background: #1a1f2c; color: white; }
+QPushButton#mode:checked {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #6d28d9, stop:1 #db2777);
+    border: none; color: white; font-weight: 600;
+}
+
+QFrame#miniPlayer {
+    background: #0c0f15; border-top: 1px solid #1f2330;
+}
+QLabel#miniTitle { font-weight: 600; color: #fafafa; }
+
+QListWidget#playlistList {
+    background: #0d1118; border: 1px solid #232838; border-radius: 10px;
+    padding: 4px;
+}
+QListWidget#playlistList::item {
+    padding: 10px 12px; border-radius: 8px; margin: 2px 0;
+}
+QListWidget#playlistList::item:selected {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #6d28d9, stop:1 #7c3aed);
+    color: white;
+}
 """

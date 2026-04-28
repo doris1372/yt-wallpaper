@@ -12,7 +12,10 @@ from PySide6.QtWidgets import QApplication, QMessageBox
 
 from .config import Settings, app_data_dir
 from .library import Library
+from .music_player import MusicPlayer
 from .pause_monitor import PauseMonitor
+from .playlists import Playlists
+from .soundcloud import SoundCloudClient
 from .styles import QSS
 from .tray import Tray
 from .wallpaper import WallpaperEngine
@@ -53,13 +56,18 @@ class Controller:
         self.app = app
         self.settings = Settings.load()
         self.library = Library()
+        self.playlists = Playlists()
+        self.sc = SoundCloudClient(cache_path=app_data_dir() / "sc-client-id.json")
+        self.player = MusicPlayer(self.sc)
         self.engine = WallpaperEngine()
         self.monitor = PauseMonitor(
             pause_on_fullscreen=self.settings.pause_on_fullscreen,
             pause_on_battery=self.settings.pause_on_battery,
             pause_when_obscured=self.settings.pause_when_obscured,
         )
-        self.window = MainWindow(self.settings, self.library)
+        self.window = MainWindow(
+            self.settings, self.library, self.sc, self.playlists, self.player
+        )
         self.tray = Tray(app.windowIcon())
 
         self._wire()
@@ -69,6 +77,8 @@ class Controller:
         self.window.deactivate_clip.connect(self.deactivate_clip)
         self.window.volume_changed.connect(self._on_volume_changed)
         self.window.pause_options_changed.connect(self._on_pause_options_changed)
+        self.window.set_track_wallpaper.connect(self.activate_track_wallpaper)
+        self.player.error.connect(self._on_player_error)
 
         self.monitor.paused_changed.connect(self._on_pause_changed)
 
@@ -125,6 +135,49 @@ class Controller:
 
     def deactivate_clip(self, _clip_id: str) -> None:
         self._stop_wallpaper()
+
+    def activate_track_wallpaper(self, track) -> None:  # noqa: ANN001
+        """Set a SoundCloud track's cover as the wallpaper while audio plays
+        in the mini-player."""
+        if track is None:
+            return
+        if not self.engine.supported:
+            QMessageBox.information(
+                self.window,
+                "ytwall",
+                "Видео-обои поддерживаются только на Windows.",
+            )
+            return
+        # Make sure the track is actually playing in the mini-player.
+        if self.player.current is None or self.player.current.id != track.id:
+            self.player.play_track(track)
+        # Download cover synchronously (small file, ~50-200 KB) and use it as wallpaper.
+        from .artwork import download_blocking
+
+        artwork_url = track.display_artwork or track.artwork_url
+        cover_path = download_blocking(artwork_url) if artwork_url else None
+        if cover_path is None:
+            QMessageBox.warning(
+                self.window, "ytwall", "Не удалось скачать обложку трека."
+            )
+            return
+        try:
+            self.engine.start(str(cover_path), volume=0)  # audio comes from MusicPlayer, not engine
+        except Exception as e:  # noqa: BLE001
+            log.exception("Failed to start cover wallpaper")
+            QMessageBox.critical(self.window, "ytwall", f"Не удалось запустить обои:\n{e}")
+            return
+        self.settings.active_clip_id = None  # detach video clip if any
+        self.settings.save()
+        self.window.set_active_clip(None)
+        self.tray.set_running(True)
+        self.monitor.start()
+        self.window.show_status(f"Обои: {track.title}")
+        self.tray.notify("ytwall", f"Обои: {track.title}")
+
+    def _on_player_error(self, msg: str) -> None:
+        log.warning("MusicPlayer error: %s", msg)
+        self.window.show_status(f"Плеер: {msg}")
 
     def _stop_wallpaper(self) -> None:
         self.engine.stop()

@@ -254,6 +254,7 @@ class WallpaperEngine:
             mute="yes",
             volume=self._volume,
             ytdl=False,
+            image_display_duration="inf",  # keep cover-art images on screen forever
         )
 
     def _reparent_into_workerw(self) -> None:
