@@ -1,0 +1,115 @@
+name: Build Windows EXE
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Download libmpv (Windows)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $api = "https://api.github.com/repos/shinchiro/mpv-winbuild-cmake/releases/latest"
+          $headers = @{ "User-Agent" = "ytwall-ci"; "Accept" = "application/vnd.github+json" }
+          if ($env:GITHUB_TOKEN) { $headers["Authorization"] = "Bearer $env:GITHUB_TOKEN" }
+          $release = Invoke-RestMethod -Uri $api -Headers $headers
+          $asset = $release.assets | Where-Object { $_.name -like "mpv-dev-x86_64-2*.7z" } | Select-Object -First 1
+          if (-not $asset) {
+            $asset = $release.assets | Where-Object { $_.name -like "mpv-dev-x86_64*.7z" } | Select-Object -First 1
+          }
+          if (-not $asset) { throw "No mpv-dev asset found in shinchiro/mpv-winbuild-cmake latest release" }
+          Write-Host "Downloading $($asset.name)"
+          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile mpv-dev.7z
+          7z x mpv-dev.7z -ompv-dev | Out-Null
+          $dll = Get-ChildItem -Path mpv-dev -Recurse -Filter "libmpv-2.dll" | Select-Object -First 1
+          if (-not $dll) { $dll = Get-ChildItem -Path mpv-dev -Recurse -Filter "mpv-2.dll" | Select-Object -First 1 }
+          if (-not $dll) { throw "libmpv-2.dll not found in archive" }
+          Copy-Item $dll.FullName -Destination "mpv-2.dll" -Force
+          Copy-Item $dll.FullName -Destination "libmpv-2.dll" -Force
+          Get-Item mpv-2.dll | Format-List Name, Length
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Lint
+        shell: pwsh
+        run: |
+          pip install ruff
+          ruff check src/
+
+      - name: Build with PyInstaller
+        shell: pwsh
+        run: |
+          pyinstaller ytwall.spec --clean --noconfirm
+          Get-ChildItem dist\ytwall | Select-Object Name, Length | Format-Table
+
+      - name: Smoke-test launch (start + kill)
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          $proc = Start-Process -FilePath "dist\ytwall\ytwall.exe" -PassThru -WindowStyle Hidden
+          Start-Sleep -Seconds 5
+          if ($proc -and -not $proc.HasExited) {
+            Write-Host "Process started OK; killing..."
+            Stop-Process -Id $proc.Id -Force
+          } else {
+            Write-Host "Process exited early; smoke test inconclusive."
+          }
+
+      - name: Package zip
+        shell: pwsh
+        run: |
+          $version = if ($env:GITHUB_REF -like "refs/tags/v*") {
+            $env:GITHUB_REF.Substring("refs/tags/".Length)
+          } else {
+            "dev-$($env:GITHUB_SHA.Substring(0,7))"
+          }
+          $name = "ytwall-$version-win64"
+          Rename-Item dist\ytwall $name
+          Compress-Archive -Path "dist\$name" -DestinationPath "dist\$name.zip" -Force
+          Write-Host "ARTIFACT_NAME=$name" | Out-File -Append $env:GITHUB_ENV
+          Write-Host "ARTIFACT_ZIP=dist\$name.zip" | Out-File -Append $env:GITHUB_ENV
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: ${{ env.ARTIFACT_ZIP }}
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish GitHub Release (on tag)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.ARTIFACT_ZIP }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
