@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QMessageBox,
     QPushButton,
     QScrollArea,
@@ -30,6 +31,7 @@ class LibraryTab(QWidget):
         self.library = library
         self._cards: dict[str, ClipCard] = {}
         self._active_clip_id: str | None = None
+        self._filter: str = ""
         self._build_ui()
         self.refresh()
 
@@ -39,7 +41,7 @@ class LibraryTab(QWidget):
         outer.setSpacing(20)
 
         header = QHBoxLayout()
-        title = QLabel("Музыка / Клипы")
+        title = QLabel("Клипы")
         title.setObjectName("h1")
         header.addWidget(title)
         header.addStretch(1)
@@ -49,6 +51,12 @@ class LibraryTab(QWidget):
         refresh_btn.clicked.connect(self.refresh)
         header.addWidget(refresh_btn)
         outer.addLayout(header)
+
+        # Search field
+        self.search_edit = QLineEdit()
+        self.search_edit.setPlaceholderText("Поиск по клипам… (название / артист)")
+        self.search_edit.textChanged.connect(self._on_filter_changed)
+        outer.addWidget(self.search_edit)
 
         subtitle = QLabel("Скачанные клипы. Нажмите «Поставить на обои», чтобы клип заиграл фоном на рабочем столе.")
         subtitle.setObjectName("muted")
@@ -91,13 +99,21 @@ class LibraryTab(QWidget):
             w.setParent(None)
         self._cards.clear()
 
-        clips = [c for c in self.library.all() if c.exists()]
         # Drop missing-on-disk clips silently
-        for c in self.library.all():
+        for c in list(self.library.all()):
             if not c.exists():
                 self.library.remove(c.id)
+        clips = self.library.all()
+        if self._filter:
+            f = self._filter.lower()
+            clips = [c for c in clips if f in c.title.lower() or f in c.artist.lower()]
 
         if not clips:
+            self.empty_label.setText(
+                "Ничего не найдено по фильтру."
+                if self._filter else
+                "Библиотека пуста.\nПерейдите во вкладку «Загрузка» и добавьте первое видео."
+            )
             self.empty_label.show()
             return
         self.empty_label.hide()
@@ -113,6 +129,10 @@ class LibraryTab(QWidget):
             self._cards[clip.id] = card
             if clip.id == self._active_clip_id:
                 card.set_active(True)
+
+    def _on_filter_changed(self, text: str) -> None:
+        self._filter = text.strip()
+        self.refresh()
 
     def set_active_clip(self, clip_id: str | None) -> None:
         self._active_clip_id = clip_id
