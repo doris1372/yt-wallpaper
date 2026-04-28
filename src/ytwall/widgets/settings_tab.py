@@ -66,6 +66,34 @@ class SettingsTab(QWidget):
         self.quality_box.currentTextChanged.connect(self._on_quality_changed)
         cl.addWidget(self.quality_box)
 
+        cl.addWidget(self._h2("Cookies из браузера"))
+        cookies_hint = QLabel(
+            "Если YouTube требует подтвердить, что ты не бот — приложение возьмёт cookies "
+            "из выбранного браузера. «Авто» пробует Chrome → Edge → Firefox → Brave → Opera."
+        )
+        cookies_hint.setObjectName("muted")
+        cookies_hint.setWordWrap(True)
+        cl.addWidget(cookies_hint)
+        self.cookies_box = QComboBox()
+        self._cookies_options = [
+            ("auto", "Авто (рекомендуется)"),
+            ("chrome", "Chrome"),
+            ("edge", "Edge"),
+            ("firefox", "Firefox"),
+            ("brave", "Brave"),
+            ("opera", "Opera"),
+            ("vivaldi", "Vivaldi"),
+            ("chromium", "Chromium"),
+            ("off", "Не использовать"),
+        ]
+        for _, label in self._cookies_options:
+            self.cookies_box.addItem(label)
+        keys = [k for k, _ in self._cookies_options]
+        cur_idx = keys.index(self.settings.cookies_browser) if self.settings.cookies_browser in keys else 0
+        self.cookies_box.setCurrentIndex(cur_idx)
+        self.cookies_box.currentIndexChanged.connect(self._on_cookies_changed)
+        cl.addWidget(self.cookies_box)
+
         outer.addWidget(card)
 
         # ---- Playback card ----
@@ -157,6 +185,11 @@ class SettingsTab(QWidget):
     def _on_quality_changed(self, text: str) -> None:
         self.settings.quality = text
         self.settings.save()
+
+    def _on_cookies_changed(self, idx: int) -> None:
+        if 0 <= idx < len(self._cookies_options):
+            self.settings.cookies_browser = self._cookies_options[idx][0]
+            self.settings.save()
 
     def _on_volume_changed(self, value: int) -> None:
         self.settings.volume = int(value)
