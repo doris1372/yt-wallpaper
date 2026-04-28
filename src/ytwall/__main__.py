@@ -1,10 +1,19 @@
+"""Entry point: run with `python -m ytwall` or via the frozen PyInstaller exe.
+
+We use absolute imports so the same module works in both modes:
+- `python -m ytwall` → imported as `ytwall.__main__` (package context)
+- frozen .exe → executed as `__main__` (no package context)
+PyInstaller bundles the whole `ytwall` package, so `from ytwall.app import run`
+resolves correctly in both cases.
+"""
+
 from __future__ import annotations
 
 import os
 import sys
 
-from . import __version__
-from .app import run
+from ytwall import __version__
+from ytwall.app import run
 
 
 def main() -> int:
