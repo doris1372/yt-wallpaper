@@ -32,6 +32,15 @@ for dll_name in ("libmpv-2.dll", "mpv-2.dll"):
         binaries.append((str(dll_path), "."))
         break
 
+# Bundle ffmpeg + ffprobe (required by yt-dlp to mux video+audio streams).
+# Place ffmpeg.exe / ffprobe.exe next to this spec OR under bin/.
+for exe_name in ("ffmpeg.exe", "ffprobe.exe", "ffmpeg", "ffprobe"):
+    for parent in (ROOT, ROOT / "bin"):
+        exe_path = parent / exe_name
+        if exe_path.exists():
+            binaries.append((str(exe_path), "."))
+            break
+
 # yt_dlp uses dynamic imports for hundreds of extractors — bundle them all.
 hiddenimports = collect_submodules("yt_dlp")
 

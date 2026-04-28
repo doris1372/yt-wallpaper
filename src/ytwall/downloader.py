@@ -1,10 +1,46 @@
 from __future__ import annotations
 
+import os
 import re
+import shutil
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QRunnable, Signal
+
+
+def _bundled_ffmpeg_dir() -> str | None:
+    """Return the directory containing ffmpeg.exe / ffprobe.exe shipped with us.
+
+    Search order:
+      1. PyInstaller _MEIPASS (when running from the frozen .exe)
+      2. Directory next to the running executable (`sys.executable`'s parent)
+      3. Repo-root `bin/` (development mode)
+      4. None — fall back to system PATH (yt-dlp's default).
+    """
+    candidates: list[Path] = []
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        candidates.append(Path(meipass))
+        candidates.append(Path(meipass) / "bin")
+    if getattr(sys, "frozen", False):
+        candidates.append(Path(sys.executable).parent)
+        candidates.append(Path(sys.executable).parent / "bin")
+    candidates.append(Path(__file__).resolve().parent.parent.parent / "bin")
+
+    for d in candidates:
+        if (d / "ffmpeg.exe").exists() or (d / "ffmpeg").exists():
+            return str(d)
+
+    found = shutil.which("ffmpeg")
+    if found:
+        return str(Path(found).parent)
+    return None
+
+
+def has_ffmpeg() -> bool:
+    return _bundled_ffmpeg_dir() is not None
 
 _QUALITY_MAP = {
     "720p": "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best",
@@ -120,6 +156,12 @@ class DownloadJob(QRunnable):
             "concurrent_fragment_downloads": 4,
             "retries": 5,
         }
+
+        ffmpeg_dir = _bundled_ffmpeg_dir()
+        if ffmpeg_dir:
+            opts["ffmpeg_location"] = ffmpeg_dir
+            # also extend PATH so any sub-tool yt-dlp spawns finds ffprobe
+            os.environ["PATH"] = ffmpeg_dir + os.pathsep + os.environ.get("PATH", "")
 
         self.signals.progress.emit(0.0, "Извлечение метаданных…")
 
