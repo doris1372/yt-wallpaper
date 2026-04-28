@@ -39,6 +39,10 @@ class Settings:
     quality: str = "1080p"  # 720p / 1080p / 1440p / 2160p / best
     active_clip_id: str | None = None
     last_url: str = ""
+    # Browser to read cookies from when YouTube asks for sign-in.
+    # "auto" = try chrome/edge/firefox/brave/opera/vivaldi/chromium in order.
+    # "off" = never use cookies. Specific name = only that browser.
+    cookies_browser: str = "auto"
 
     @classmethod
     def load(cls) -> Settings:
