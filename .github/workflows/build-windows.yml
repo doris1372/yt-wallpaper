@@ -94,8 +94,9 @@ jobs:
           $name = "ytwall-$version-win64"
           Rename-Item dist\ytwall $name
           Compress-Archive -Path "dist\$name" -DestinationPath "dist\$name.zip" -Force
-          Write-Host "ARTIFACT_NAME=$name" | Out-File -Append $env:GITHUB_ENV
-          Write-Host "ARTIFACT_ZIP=dist\$name.zip" | Out-File -Append $env:GITHUB_ENV
+          "ARTIFACT_NAME=$name" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "ARTIFACT_ZIP=dist/$name.zip" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Get-Item "dist\$name.zip" | Format-List Name, Length
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
