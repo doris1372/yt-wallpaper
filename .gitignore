@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+.venv/
+venv/
+env/
+ENV/
+
+# PyInstaller
+build/
+dist/
+*.manifest
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# App data (local downloads / config)
+clips/
+config.json
+
+# Bundled binaries that users provide locally
+mpv-2.dll
+libmpv-2.dll
+ffmpeg.exe
+yt-dlp.exe
