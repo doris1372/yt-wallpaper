@@ -89,11 +89,18 @@ class DownloadJob(QRunnable):
     Emits progress signals on the main thread via Qt signals.
     """
 
-    def __init__(self, url: str, dest_dir: Path, quality: str = "1080p") -> None:
+    def __init__(
+        self,
+        url: str,
+        dest_dir: Path,
+        quality: str = "1080p",
+        cookies_browser: str = "auto",
+    ) -> None:
         super().__init__()
         self.url = url.strip()
         self.dest_dir = Path(dest_dir)
         self.quality = quality
+        self.cookies_browser = (cookies_browser or "auto").lower()
         self.signals = DownloadSignals()
         self._cancel = False
 
@@ -125,14 +132,14 @@ class DownloadJob(QRunnable):
         except _Cancelled:
             self.signals.failed.emit("Загрузка отменена")
         except Exception as e:  # noqa: BLE001
-            self.signals.failed.emit(f"{type(e).__name__}: {e}")
+            self.signals.failed.emit(_friendly_error(e))
 
     def _run(self) -> None:
         if not is_youtube_url(self.url):
             raise ValueError("Это не похоже на ссылку YouTube")
 
         try:
-            from yt_dlp import YoutubeDL
+            import yt_dlp  # noqa: F401  -- imported for availability check
         except ImportError as e:  # pragma: no cover
             raise RuntimeError(
                 "yt-dlp is not installed. Install with: pip install yt-dlp"
@@ -165,8 +172,7 @@ class DownloadJob(QRunnable):
 
         self.signals.progress.emit(0.0, "Извлечение метаданных…")
 
-        with YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(self.url, download=True)
+        info = self._extract_with_cookie_fallback(opts)
 
         if isinstance(info, dict) and info.get("_type") == "playlist":
             entries = info.get("entries") or []
@@ -211,6 +217,80 @@ class DownloadJob(QRunnable):
         self.signals.progress.emit(1.0, "Готово")
         self.signals.finished.emit(result)
 
+    # ---- cookie fallback ----
+    def _extract_with_cookie_fallback(self, opts: dict):
+        """Try the download without cookies first; if YouTube demands sign-in,
+        retry with cookies pulled from the user's browser."""
+        from yt_dlp import YoutubeDL
+        from yt_dlp.utils import DownloadError
+
+        # Decide which browser order to try.
+        if self.cookies_browser == "off":
+            browsers: list[str] = []
+        elif self.cookies_browser in {"", "auto"}:
+            browsers = ["chrome", "edge", "firefox", "brave", "opera", "vivaldi", "chromium"]
+        else:
+            browsers = [self.cookies_browser]
+
+        # First attempt: no cookies (works for most public videos and avoids
+        # asking the OS for browser cookie DB access on every download).
+        first_error: Exception | None = None
+        try:
+            with YoutubeDL(opts) as ydl:
+                return ydl.extract_info(self.url, download=True)
+        except DownloadError as e:
+            first_error = e
+            if not _needs_signin(str(e)) or not browsers:
+                raise
+
+        self.signals.log.emit(
+            "YouTube требует авторизации — пробую cookies из установленных браузеров…"
+        )
+
+        last_err: Exception | None = first_error
+        for browser in browsers:
+            if self._cancel:
+                raise _Cancelled()
+            opts2 = dict(opts)
+            opts2["cookiesfrombrowser"] = (browser,)
+            self.signals.progress.emit(0.0, f"Пробую cookies из {browser}…")
+            try:
+                with YoutubeDL(opts2) as ydl:
+                    return ydl.extract_info(self.url, download=True)
+            except Exception as e:  # noqa: BLE001 — try next browser
+                last_err = e
+                self.signals.log.emit(f"  {browser}: {type(e).__name__}: {e}")
+                continue
+
+        # Nothing worked.
+        raise RuntimeError(
+            "YouTube требует подтвердить, что ты не бот, а ни один из установленных "
+            "браузеров (Chrome / Edge / Firefox / Brave / Opera) не дал валидных cookies. "
+            "Открой YouTube в любом браузере, войди в аккаунт и попробуй снова. "
+            f"Последняя ошибка: {last_err}"
+        ) from last_err
+
 
 class _Cancelled(Exception):
     pass
+
+
+def _needs_signin(text: str) -> bool:
+    text = (text or "").lower()
+    return (
+        "sign in to confirm" in text
+        or "sign in to confirm you" in text
+        or "confirm you're not a bot" in text
+        or "use --cookies" in text
+    )
+
+
+def _friendly_error(e: BaseException) -> str:
+    msg = str(e)
+    if _needs_signin(msg):
+        return (
+            "YouTube требует подтвердить, что ты не бот. "
+            "Открой YouTube в Chrome / Edge / Firefox, залогинься — приложение само "
+            "подхватит cookies при следующей попытке."
+        )
+    return f"{type(e).__name__}: {msg}"
