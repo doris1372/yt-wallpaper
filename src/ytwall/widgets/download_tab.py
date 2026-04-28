@@ -138,7 +138,12 @@ class DownloadTab(QWidget):
 
         from pathlib import Path
 
-        job = DownloadJob(url, Path(self.settings.clips_dir), self.settings.quality)
+        job = DownloadJob(
+            url,
+            Path(self.settings.clips_dir),
+            self.settings.quality,
+            cookies_browser=self.settings.cookies_browser,
+        )
         job.signals.progress.connect(self._on_progress, Qt.QueuedConnection)
         job.signals.finished.connect(self._on_finished, Qt.QueuedConnection)
         job.signals.failed.connect(self._on_failed, Qt.QueuedConnection)
